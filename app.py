@@ -1,3 +1,5 @@
+#app\Scripts\activate
+
 import streamlit as st
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -7,13 +9,28 @@ from langchain_community.vectorstores import FAISS
 from langchain.tools.retriever import create_retriever_tool
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
+# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAI
+from langchain_google_genai.embeddings import GoogleGenerativeAIEmbeddings
+from langchain_google_genai.llms import GoogleGenerativeAI
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 
+from dotenv import load_dotenv
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-embeddings = SpacyEmbeddings(model_name="en_core_web_sm")
+load_dotenv()
+google_api_key = os.getenv("GOOGLE_API_KEY")
+os.environ["GOOGLE_API_KEY"] = google_api_key
+
+
+
+#embeddings = SpacyEmbeddings(model_name="en_core_web_sm")
+hf_embeddings = HuggingFaceEmbeddings(
+        model_name= "BAAI/bge-small-en-v1.5",
+        model_kwargs={"device": "cpu"},
+    )
 def pdf_read(pdf_doc):
     text = ""
     for pdf in pdf_doc:
@@ -36,27 +53,31 @@ def vector_store(text_chunks):
     vector_store.save_local("faiss_db")
 
 
-def get_conversational_chain(tools,ques):
-    #os.environ["ANTHROPIC_API_KEY"]=os.getenv["ANTHROPIC_API_KEY"]
-    #llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0, api_key=os.getenv("ANTHROPIC_API_KEY"),verbose=True)
-    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, api_key="")
+def get_conversational_chain(tools, ques):
+    llm = GoogleGenerativeAI(
+        model = "gemini-1.0-pro",  # Define llm_name as the Google LLM model you want to use
+        temperature = 0,  # Define temperature based on your needs
+        google_api_key = google_api_key  # Make sure to define this key in your environment
+    )
+    
     prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """You are a helpful assistant. Answer the question as detailed as possible from the provided context, make sure to provide all the details, if the answer is not in
-    provided context just say, "answer is not available in the context", don't provide the wrong answer""",
-        ),
-        ("placeholder", "{chat_history}"),
-        ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
-)
-    tool=[tools]
+        [
+            (
+                "system",
+                """You are a helpful assistant. Answer the question as detailed as possible from the provided context, make sure to provide all the details. If the answer is not in
+the provided context, just say, "answer is not available in the context"; don't provide the wrong answer.""",
+            ),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}"),
+        ]
+    )
+    
+    tool = [tools]
     agent = create_tool_calling_agent(llm, tool, prompt)
 
     agent_executor = AgentExecutor(agent=agent, tools=tool, verbose=True)
-    response=agent_executor.invoke({"input": ques})
+    response = agent_executor.invoke({"input": ques})
     print(response)
     st.write("Reply: ", response['output'])
 
